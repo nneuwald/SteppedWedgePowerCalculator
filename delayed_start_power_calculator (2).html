@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delayed-Start Design — Power Calculator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  :root{
+    --bg:#f5f4f0;--surface:#ffffff;--border:#d8d6cf;--border2:#b8b5ac;
+    --text:#1a1917;--muted:#6b6860;--accent:#1a1917;
+    --blue:#2563a8;--green:#1a7a52;--amber:#b45309;--red:#b91c1c;
+    --de-bg:#dbeafe;--de-text:#1e3a5f;
+    --tx-bg:#d1fae5;--tx-text:#064e35;
+    --fu-bg:#fef3c7;--fu-text:#78350f;
+    --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;
+    --radius:4px;
+  }
+  body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;min-height:100vh;}
+  header{background:var(--text);color:#fff;padding:20px 32px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+  header h1{font-family:var(--mono);font-size:14px;font-weight:500;letter-spacing:.02em;}
+  header .subtitle{font-size:11px;opacity:.45;font-family:var(--mono);}
+  header .copyright{margin-left:auto;font-family:var(--mono);font-size:11px;opacity:.55;white-space:nowrap;}
+  .layout{display:grid;grid-template-columns:340px 1fr;min-height:calc(100vh - 58px);}
+  .sidebar{background:var(--surface);border-right:1px solid var(--border);padding:24px 20px;overflow-y:auto;}
+  .main{padding:24px 28px;overflow-y:auto;}
+  .group-label{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;margin:20px 0 12px;padding-bottom:5px;border-bottom:1px solid var(--border);}
+  .group-label:first-child{margin-top:0;}
+  .ctrl{margin-bottom:12px;}
+  .ctrl-label{font-size:12px;color:var(--muted);margin-bottom:4px;display:block;}
+  .ctrl-row{display:flex;align-items:center;gap:8px;}
+  .ctrl-row input[type=range]{flex:1;height:3px;accent-color:var(--accent);cursor:pointer;}
+  .ctrl-row input[type=number]{width:76px;flex-shrink:0;font-family:var(--mono);font-size:13px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);-moz-appearance:textfield;}
+  .ctrl-row input[type=number]::-webkit-inner-spin-button,.ctrl-row input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;}
+  .ctrl-row input[type=number]:focus{outline:none;border-color:var(--accent);}
+  .toggle-row{display:flex;align-items:center;gap:8px;margin:12px 0 8px;}
+  .toggle-row input[type=checkbox]{width:14px;height:14px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;}
+  .toggle-row label{font-size:12px;color:var(--muted);cursor:pointer;}
+  .derived{font-family:var(--mono);font-size:11px;color:var(--muted);margin:-4px 0 12px;padding:5px 9px;background:var(--bg);border-radius:var(--radius);border:1px solid var(--border);}
+  .derived b{color:var(--text);font-weight:500;}
+  .disabled-block{opacity:.35;pointer-events:none;}
+
+  /* Recruitment mode selector */
+  .mode-selector{display:flex;gap:0;margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+  .mode-btn{flex:1;padding:7px 8px;font-family:var(--mono);font-size:11px;border:none;background:var(--bg);color:var(--muted);cursor:pointer;text-align:center;transition:background .15s,color .15s;line-height:1.3;}
+  .mode-btn.active{background:var(--text);color:#fff;}
+  .mode-note{font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.5;padding:7px 9px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;}
+  .mode-note b{color:var(--text);}
+
+  .stat-row{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:20px;}
+  .stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;}
+  .stat .lbl{font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:3px;}
+  .stat .num{font-family:var(--mono);font-size:24px;font-weight:500;color:var(--text);line-height:1.1;}
+  .stat .num.good{color:var(--green);}
+  .stat .num.warn{color:var(--amber);}
+  .stat .num.bad{color:var(--red);}
+  .section-label{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin-bottom:8px;}
+  .dm-wrap{overflow-x:auto;margin-bottom:20px;}
+  .dm-table{border-collapse:separate;border-spacing:3px;font-family:var(--mono);}
+  .dm-table td{border-radius:3px;padding:4px 8px;text-align:center;font-size:10px;font-weight:500;min-width:42px;white-space:nowrap;}
+  .dm-hdr{background:none!important;color:var(--muted)!important;font-size:10px;}
+  .dm-de{background:var(--de-bg);color:var(--de-text);}
+  .dm-tx{background:var(--tx-bg);color:var(--tx-text);}
+  .dm-fu{background:var(--fu-bg);color:var(--fu-text);}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px;font-size:11px;font-family:var(--mono);color:var(--muted);}
+  .legend span{display:flex;align-items:center;gap:4px;}
+  .legend-dot{width:10px;height:10px;border-radius:2px;border:1px solid;flex-shrink:0;}
+  .chart-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:16px;}
+  .chart-inner{position:relative;width:100%;height:280px;}
+  .chart-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:10px;}
+  .chart-legend span{display:flex;align-items:center;gap:4px;}
+  .summary-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:14px;}
+  .summary-box .summary-label{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+  .summary-box p{font-size:13px;line-height:1.7;color:var(--text);}
+  .copy-btn{margin-top:10px;font-family:var(--mono);font-size:11px;padding:5px 12px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--bg);color:var(--muted);cursor:pointer;transition:background .15s,color .15s;}
+  .copy-btn:hover{background:var(--text);color:#fff;border-color:var(--text);}
+  .note{font-size:11px;color:var(--muted);font-family:var(--mono);line-height:1.6;}
+  @media(max-width:800px){
+    .layout{grid-template-columns:1fr;}
+    .sidebar{border-right:none;border-bottom:1px solid var(--border);}
+    header{padding:14px 20px;}
+    .main{padding:18px;}
+  }
+  @media print{
+    header{background:#000;}
+    .ctrl-row input[type=range],.copy-btn,.mode-btn{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Delayed-Start Design &mdash; Power Calculator</h1>
+  <span class="subtitle">Within-person repeated measures &middot; GLS framework</span>
+  <span class="copyright">&copy; 2026 Neuwald. All rights reserved.</span>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
+
+  <div class="group-label">Recruitment mode</div>
+
+  <div class="mode-selector">
+    <button class="mode-btn active" id="btn-cohort" onclick="setMode('cohort')">Cohort-anchored</button>
+    <button class="mode-btn" id="btn-rolling" onclick="setMode('rolling')">Rolling recruitment</button>
+  </div>
+  <div class="mode-note" id="mode-note">
+    <b>Cohort-anchored:</b> all participants recruited at once and randomly assigned to a cohort. Cohorts move through DE and treatment together on a shared calendar. Time trend modeled and partialled out.
+  </div>
+
+  <div class="group-label">Study design</div>
+
+  <div class="ctrl">
+    <span class="ctrl-label">Number of cohorts</span>
+    <div class="ctrl-row">
+      <input type="range" id="K-s" min="2" max="6" step="1" value="3">
+      <input type="number" id="K" min="2" max="20" step="1" value="3">
+    </div>
+  </div>
+  <div class="ctrl">
+    <span class="ctrl-label">Assessments during control phase</span>
+    <div class="ctrl-row">
+      <input type="range" id="nDE-s" min="1" max="5" step="1" value="2">
+      <input type="number" id="nDE" min="1" max="10" step="1" value="2">
+    </div>
+  </div>
+  <div class="ctrl">
+    <span class="ctrl-label">Assessments during treatment phase</span>
+    <div class="ctrl-row">
+      <input type="range" id="nTX-s" min="1" max="5" step="1" value="2">
+      <input type="number" id="nTX" min="1" max="10" step="1" value="2">
+    </div>
+  </div>
+  <div class="toggle-row">
+    <input type="checkbox" id="inclFU">
+    <label for="inclFU">Include follow-up assessments</label>
+  </div>
+  <div id="fuBlock" class="disabled-block">
+    <div class="ctrl">
+      <span class="ctrl-label">Number of follow-up assessments</span>
+      <div class="ctrl-row">
+        <input type="range" id="nFU-s" min="1" max="5" step="1" value="3">
+        <input type="number" id="nFU" min="1" max="10" step="1" value="3">
+      </div>
+    </div>
+  </div>
+
+  <div class="group-label">Statistical parameters</div>
+
+  <div class="ctrl">
+    <span class="ctrl-label">Participants per cohort</span>
+    <div class="ctrl-row">
+      <input type="range" id="n-s" min="5" max="150" step="1" value="25">
+      <input type="number" id="n" min="1" max="10000" step="1" value="25">
+    </div>
+  </div>
+  <div class="ctrl">
+    <span class="ctrl-label">Treatment effect &mdash; delta (outcome units)</span>
+    <div class="ctrl-row">
+      <input type="range" id="delta-s" min="0.5" max="15" step="0.25" value="3.5">
+      <input type="number" id="delta" min="0.01" max="10000" step="0.1" value="3.5">
+    </div>
+  </div>
+  <div class="ctrl">
+    <span class="ctrl-label">SD of outcome (same units as delta)</span>
+    <div class="ctrl-row">
+      <input type="range" id="sigma-s" min="1" max="30" step="0.5" value="7.5">
+      <input type="number" id="sigma" min="0.01" max="10000" step="0.5" value="7.5">
+    </div>
+  </div>
+  <div class="derived">Implied Cohen&apos;s d: <b id="derived-d">&mdash;</b></div>
+
+  <div class="ctrl">
+    <span class="ctrl-label">ICC (within-person test-retest correlation across waves)</span>
+    <div class="ctrl-row">
+      <input type="range" id="icc-s" min="0.05" max="0.70" step="0.05" value="0.30">
+      <input type="number" id="icc" min="0.01" max="0.99" step="0.01" value="0.30">
+    </div>
+  </div>
+  <div class="ctrl">
+    <span class="ctrl-label">Alpha (two-sided)</span>
+    <div class="ctrl-row">
+      <input type="range" id="alpha-s" min="0.01" max="0.10" step="0.005" value="0.05">
+      <input type="number" id="alpha" min="0.001" max="0.20" step="0.005" value="0.05">
+    </div>
+  </div>
+
+</aside>
+
+<main class="main">
+
+  <div class="stat-row">
+    <div class="stat"><div class="lbl">Power</div><div class="num" id="s-power">&mdash;</div></div>
+    <div class="stat"><div class="lbl">Total N</div><div class="num" id="s-n">&mdash;</div></div>
+    <div class="stat"><div class="lbl">Cohen&apos;s d</div><div class="num" id="s-d">&mdash;</div></div>
+    <div class="stat"><div class="lbl">Min N for 80% power</div><div class="num" id="s-minn">&mdash;</div></div>
+  </div>
+
+  <div class="section-label" id="dm-label">Design matrix</div>
+  <div class="dm-wrap"><table class="dm-table" id="dm-table"></table></div>
+
+  <div class="legend">
+    <span><span class="legend-dot" style="background:var(--de-bg);border-color:var(--de-text);"></span>Control (DE)</span>
+    <span><span class="legend-dot" style="background:var(--tx-bg);border-color:var(--tx-text);"></span>Treatment</span>
+    <span><span class="legend-dot" style="background:var(--fu-bg);border-color:var(--fu-text);"></span>Follow-up</span>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="section-label">Power curve by ICC &mdash; participants per cohort</div>
+    <div class="chart-inner"><canvas id="pwrChart"></canvas></div>
+    <div class="chart-legend" id="chart-legend"></div>
+  </div>
+
+  <div class="summary-box">
+    <div class="summary-label">Grant-ready summary</div>
+    <p id="summary-text">&mdash;</p>
+    <button class="copy-btn" onclick="copySummary()">Copy text</button>
+  </div>
+
+  <p class="note" id="model-note"></p>
+
+</main>
+</div>
+
+<script>
+// ── Math helpers ──────────────────────────────────────────────────────────────
+function erf(x){const t=1/(1+0.3275911*Math.abs(x));const y=1-((((1.061405429*t-1.453152027)*t+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);return x>=0?y:-y;}
+function normCDF(x){return 0.5*(1+erf(x/Math.SQRT2));}
+function normINV(p){
+  const a=[2.50662823884,-18.61500062529,41.39119773534,-25.44106049637];
+  const b=[-8.47351093090,23.08336743743,-21.06224101826,3.13082909833];
+  const c=[0.3374754822726147,0.9761690190917186,0.1607979714918209,0.0276438810333863,0.0038405729373609,0.0003951896511349,0.0000321767881768,0.0000002888167364,0.0000003960315187];
+  const x=p-0.5;
+  if(Math.abs(x)<0.42){const r=x*x;return x*(((a[3]*r+a[2])*r+a[1])*r+a[0])/((((b[3]*r+b[2])*r+b[1])*r+b[0])*r+1);}
+  let r=p<0.5?p:1-p;r=Math.sqrt(-Math.log(r));
+  let s=((((((((c[8]*r+c[7])*r+c[6])*r+c[5])*r+c[4])*r+c[3])*r+c[2])*r+c[1])*r+c[0]);
+  return p<0.5?-s:s;
+}
+
+function inv3(M){
+  const[[a,b,c],[d,e,f],[g,h,ii]]=M;
+  const det=a*(e*ii-f*h)-b*(d*ii-f*g)+c*(d*h-e*g);
+  if(Math.abs(det)<1e-14)return null;
+  return[[(e*ii-f*h)/det,(c*h-b*ii)/det,(b*f-c*e)/det],[(f*g-d*ii)/det,(a*ii-c*g)/det,(c*d-a*f)/det],[(d*h-e*g)/det,(b*g-a*h)/det,(a*e-b*d)/det]];
+}
+function inv2(M){
+  const[[a,b],[c,d]]=M;
+  const det=a*d-b*c;
+  if(Math.abs(det)<1e-14)return null;
+  return[[d/det,-b/det],[-c/det,a/det]];
+}
+
+function getCrossoverTimes(K){
+  if(K===1)return[1.0];
+  return Array.from({length:K},(_,k)=>1.0+k*(1.0/(K-1)));
+}
+
+// Woodbury dot product for compound-symmetry Sigma^{-1}
+function vdot(u,v,T,sige2,tau2){
+  const a=1/sige2,bw=-tau2/(sige2*(sige2+T*tau2));
+  return a*u.reduce((s,ui,i)=>s+ui*v[i],0)+bw*u.reduce((s,ui)=>s+ui,0)*v.reduce((s,vi)=>s+vi,0);
+}
+
+// ── COHORT-ANCHORED power ─────────────────────────────────────────────────────
+// Global calendar time axis shared across cohorts.
+// Model: Y = b0 + b_time*t + b_tx*x + u_i + e  (3 params)
+// Secular trend partialled out via the t covariate.
+function powerCohortAnchored(K,n,delta,sigma,icc,alpha,nDE,nTX,nFU,inclFU){
+  if(sigma<=0||delta<=0||n<=0||K<=0)return 0;
+  const tau2=icc*sigma*sigma,sige2=sigma*sigma*(1-icc);
+  const xoT=getCrossoverTimes(K);
+  let info=0;
+  for(const xo of xoT){
+    const obs=[];
+    const deS=Math.max(nDE,1);
+    for(let i=0;i<deS;i++) obs.push({t:i*(xo/Math.max(deS-1,1)),x:0});
+    if(nDE===1) obs.push({t:xo,x:0});
+    for(let i=1;i<=nTX;i++) obs.push({t:xo+i*(1/nTX),x:1});
+    if(inclFU) for(let i=1;i<=nFU;i++) obs.push({t:xo+1+i*(2/nFU),x:1});
+    const T=obs.length;
+    const tv=obs.map(o=>o.t),xv=obs.map(o=>o.x),one=Array(T).fill(1);
+    const M=[
+      [vdot(one,one,T,sige2,tau2),vdot(one,tv,T,sige2,tau2),vdot(one,xv,T,sige2,tau2)],
+      [vdot(tv,one,T,sige2,tau2),vdot(tv,tv,T,sige2,tau2),vdot(tv,xv,T,sige2,tau2)],
+      [vdot(xv,one,T,sige2,tau2),vdot(xv,tv,T,sige2,tau2),vdot(xv,xv,T,sige2,tau2)]
+    ];
+    const Mi=inv3(M);
+    if(!Mi||Mi[2][2]<=0) continue;
+    info+=n/Mi[2][2];
+  }
+  if(info<=0)return 0;
+  const zb=delta/Math.sqrt(1/info)-normINV(1-alpha/2);
+  return Math.min(Math.max(normCDF(zb),0),1);
+}
+
+// ── ROLLING RECRUITMENT power ─────────────────────────────────────────────────
+// Participant-anchored time: each person's t=0 is their enrollment date.
+// No shared calendar → no secular trend to partial out.
+// Model: Y = b0 + b_tx*x + u_i + e  (2 params — gains 1 df vs cohort-anchored)
+// K still matters because cohorts differ in DE duration (nDE obs spacing differs)
+// affecting the x contrast vector, but the effect is modest.
+function powerRolling(K,n,delta,sigma,icc,alpha,nDE,nTX,nFU,inclFU){
+  if(sigma<=0||delta<=0||n<=0||K<=0)return 0;
+  const tau2=icc*sigma*sigma,sige2=sigma*sigma*(1-icc);
+  const xoT=getCrossoverTimes(K);
+  let info=0;
+  for(const xo of xoT){
+    const obs=[];
+    const deS=Math.max(nDE,1);
+    for(let i=0;i<deS;i++) obs.push({x:0});
+    if(nDE===1) obs.push({x:0});
+    for(let i=1;i<=nTX;i++) obs.push({x:1});
+    if(inclFU) for(let i=1;i<=nFU;i++) obs.push({x:1});
+    const T=obs.length;
+    const xv=obs.map(o=>o.x),one=Array(T).fill(1);
+    // 2-param model: no time covariate
+    const M=[
+      [vdot(one,one,T,sige2,tau2),vdot(one,xv,T,sige2,tau2)],
+      [vdot(xv,one,T,sige2,tau2),vdot(xv,xv,T,sige2,tau2)]
+    ];
+    const Mi=inv2(M);
+    if(!Mi||Mi[1][1]<=0) continue;
+    info+=n/Mi[1][1];
+  }
+  if(info<=0)return 0;
+  const zb=delta/Math.sqrt(1/info)-normINV(1-alpha/2);
+  return Math.min(Math.max(normCDF(zb),0),1);
+}
+
+function computePower(K,n,delta,sigma,icc,alpha,nDE,nTX,nFU,inclFU){
+  return mode==='cohort'
+    ? powerCohortAnchored(K,n,delta,sigma,icc,alpha,nDE,nTX,nFU,inclFU)
+    : powerRolling(K,n,delta,sigma,icc,alpha,nDE,nTX,nFU,inclFU);
+}
+
+function minNfor80(K,delta,sigma,icc,alpha,nDE,nTX,nFU,inclFU){
+  for(let n=2;n<=2000;n++){
+    if(computePower(K,n,delta,sigma,icc,alpha,nDE,nTX,nFU,inclFU)>=0.80)return K*n;
+  }
+  return null;
+}
+
+// ── Design matrix ─────────────────────────────────────────────────────────────
+function buildDesignTable(K,nDE,nTX,nFU,inclFU){
+  const xoT=getCrossoverTimes(K);
+  const tbl=document.getElementById('dm-table');tbl.innerHTML='';
+  // Build ref observation list for column headers
+  const refObs=[];
+  const deS=Math.max(nDE,1);
+  for(let i=0;i<deS;i++) refObs.push({phase:'de'});
+  if(nDE===1) refObs.push({phase:'de'});
+  for(let i=0;i<nTX;i++) refObs.push({phase:'tx'});
+  if(inclFU) for(let i=0;i<nFU;i++) refObs.push({phase:'fu'});
+
+  // Header row
+  const hdr=document.createElement('tr');
+  const h0=document.createElement('td');h0.className='dm-hdr';h0.textContent='';hdr.appendChild(h0);
+  if(mode==='cohort'){const ht=document.createElement('td');ht.className='dm-hdr';ht.textContent='Crossover';hdr.appendChild(ht);}
+  let dc=0,tc=0,fc=0;
+  refObs.forEach(o=>{
+    const td=document.createElement('td');td.className='dm-hdr';
+    if(o.phase==='de'){td.textContent=dc===0?'BL':'DE'+dc;dc++;}
+    else if(o.phase==='tx'){tc++;td.textContent='TX'+tc;}
+    else{fc++;td.textContent='FU'+fc;}
+    hdr.appendChild(td);
+  });
+  tbl.appendChild(hdr);
+
+  // Cohort rows
+  xoT.forEach((xo,k)=>{
+    const tr=document.createElement('tr');
+    const th=document.createElement('td');th.className='dm-hdr';th.textContent='C'+(k+1);tr.appendChild(th);
+    if(mode==='cohort'){
+      const xt=document.createElement('td');xt.className='dm-hdr';
+      xt.style.cssText='font-size:9px;';
+      xt.textContent='t='+xo.toFixed(2);tr.appendChild(xt);
+    }
+    refObs.forEach(o=>{
+      const td=document.createElement('td');
+      td.className=o.phase==='de'?'dm-de':o.phase==='fu'?'dm-fu':'dm-tx';
+      td.textContent=o.phase==='de'?'DE':o.phase==='fu'?'FU':'TX';
+      tr.appendChild(td);
+    });
+    tbl.appendChild(tr);
+  });
+
+  // Note row
+  const nr=tbl.insertRow();const ntd=nr.insertCell();
+  ntd.colSpan=refObs.length+(mode==='cohort'?2:1);
+  ntd.style.cssText='font-size:10px;color:var(--muted);padding-top:6px;font-family:var(--mono);';
+  ntd.textContent=mode==='cohort'
+    ? 'All cohorts recruited simultaneously. DE duration varies by cohort (t=1.0 to 2.0). Treatment duration identical for all.'
+    : 'Participants enrolled continuously and assigned to a cohort on arrival. DE duration varies (1.0\u20132.0 units). Time axis is participant-anchored.';
+}
+
+// ── Chart ─────────────────────────────────────────────────────────────────────
+const nVals=[5,8,10,15,20,25,30,40,50,60,75,100,150,200];
+const iccSet=[0.10,0.20,0.30,0.40,0.50];
+const iccColors=['#2563a8','#1a7a52','#b45309','#9333ea','#64748b'];
+let mode='cohort';
+
+const ctx=document.getElementById('pwrChart').getContext('2d');
+const chart=new Chart(ctx,{
+  type:'line',
+  data:{labels:nVals,datasets:[
+    ...iccSet.map((icc,i)=>({label:'ICC '+icc,data:[],borderColor:iccColors[i],backgroundColor:'transparent',borderWidth:1.5,pointRadius:2,pointBackgroundColor:iccColors[i],tension:0.3})),
+    {label:'active',data:[],borderColor:'#1a1917',backgroundColor:'transparent',borderWidth:2.5,pointRadius:4,pointBackgroundColor:'#1a1917',tension:0.3},
+    {label:'80%',data:nVals.map(()=>0.80),borderColor:'#ccc',borderDash:[4,4],borderWidth:1,pointRadius:0,tension:0}
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1917',titleFont:{family:'IBM Plex Mono',size:11},bodyFont:{family:'IBM Plex Mono',size:11},padding:10,callbacks:{label:c=>' Power: '+(c.parsed.y*100).toFixed(1)+'%'}}},
+    scales:{
+      x:{title:{display:true,text:'participants per cohort',font:{family:'IBM Plex Mono',size:11}},grid:{color:'#eeece8'},ticks:{font:{family:'IBM Plex Mono',size:10}}},
+      y:{title:{display:true,text:'power',font:{family:'IBM Plex Mono',size:11}},min:0,max:1,grid:{color:'#eeece8'},ticks:{font:{family:'IBM Plex Mono',size:10},callback:v=>v.toFixed(1)}}
+    }
+  }
+});
+
+function buildChartLegend(activeIcc){
+  const lg=document.getElementById('chart-legend');lg.innerHTML='';
+  iccSet.forEach((icc,i)=>{
+    const active=Math.abs(icc-activeIcc)<0.005;
+    const sp=document.createElement('span');
+    const dot=document.createElement('span');
+    dot.style.cssText=`display:inline-block;width:10px;height:10px;border-radius:2px;background:${iccColors[i]};margin-right:3px;${active?'outline:2px solid #1a1917;outline-offset:1px;':''}`;
+    sp.appendChild(dot);
+    sp.appendChild(document.createTextNode('ICC '+icc+(active?' \u2190':'')));
+    if(active)sp.style.color='#1a1917';
+    lg.appendChild(sp);
+  });
+  const dash=document.createElement('span');
+  dash.innerHTML='<span style="display:inline-block;width:14px;height:2px;background:#ccc;border-radius:1px;margin-right:4px;vertical-align:middle;"></span>80% threshold';
+  lg.appendChild(dash);
+}
+
+// ── Summary ───────────────────────────────────────────────────────────────────
+function buildSummary(K,n,delta,sigma,icc,alpha,nDE,nTX,nFU,inclFU,pwr,minn){
+  const totalN=K*n,d=(delta/sigma).toFixed(2),pwrPct=(pwr*100).toFixed(1);
+  const fuStr=inclFU?` followed by ${nFU} follow-up assessment${nFU>1?'s':''}`:' with no follow-up assessments modeled';
+  const minnStr=minn?(minn+' total ('+Math.ceil(minn/K)+' per cohort)'):'>2,000';
+  const modeStr=mode==='cohort'
+    ? 'All participants were recruited simultaneously and randomly assigned to one of '+K+' cohorts. Cohorts moved through the control and treatment phases together on a shared calendar. A time trend covariate was included in the model to partial out secular change.'
+    : 'Participants were enrolled on a rolling basis and randomly assigned to one of '+K+' cohorts upon enrollment, with cohort assignment determining their control-phase duration. Time is modeled relative to each participant\'s enrollment date; no secular trend covariate is required.';
+  return `We propose a delayed-start design with ${K} cohorts. ${modeStr} `+
+    `DE duration ranged from 1.0 to 2.0 assessment units across cohorts; treatment duration was identical for all. `+
+    `Each cohort completed ${nDE} assessment${nDE>1?'s':''} during the control phase and ${nTX} assessment${nTX>1?'s':''} during the treatment phase${fuStr}. `+
+    `Every participant served as their own control. `+
+    `Power was estimated using a within-person GLS framework (Hussey & Hughes, 2007), `+
+    `modeling \u03B4\u202F=\u202F${delta} (SD\u202F=\u202F${sigma}, d\u202F=\u202F${d}), `+
+    `ICC (within-person test-retest)\u202F=\u202F${icc}, \u03B1\u202F=\u202F${alpha} (two-sided). `+
+    `With ${n} participants per cohort (N\u202F=\u202F${totalN}), power\u202F=\u202F${pwrPct}%. `+
+    `Minimum N for 80% power: ${minnStr}.`;
+}
+
+function copySummary(){
+  const txt=document.getElementById('summary-text').textContent;
+  navigator.clipboard.writeText(txt).then(()=>{
+    const btn=document.querySelector('.copy-btn');btn.textContent='Copied!';
+    setTimeout(()=>btn.textContent='Copy text',1800);
+  });
+}
+
+// ── Mode toggle ───────────────────────────────────────────────────────────────
+const modeNotes={
+  cohort:'<b>Cohort-anchored:</b> all participants recruited at once and randomly assigned to a cohort. Cohorts move through DE and treatment together on a shared calendar. Time trend modeled and partialled out (3-parameter GLS).',
+  rolling:'<b>Rolling recruitment:</b> participants enrolled continuously and assigned to a cohort on arrival. Each person\'s time axis is anchored to their own enrollment date. No secular trend covariate needed — 2-parameter GLS. Slightly more powerful than cohort-anchored for the same N.'
+};
+function setMode(m){
+  mode=m;
+  document.getElementById('btn-cohort').className='mode-btn'+(m==='cohort'?' active':'');
+  document.getElementById('btn-rolling').className='mode-btn'+(m==='rolling'?' active':'');
+  document.getElementById('mode-note').innerHTML=modeNotes[m];
+  document.getElementById('dm-label').textContent=m==='cohort'
+    ?'Design matrix \u2014 shared calendar time; crossover times shown'
+    :'Design matrix \u2014 participant-anchored time; all cohorts same sequence';
+  document.getElementById('model-note').innerHTML=m==='cohort'
+    ?'Model: within-person GLS, compound symmetry covariance, intercept + time trend + treatment (3 params). Secular trends partialled out. Reference: Hussey &amp; Hughes (2007), <em>Contemp Clin Trials</em>.'
+    :'Model: within-person GLS, compound symmetry covariance, intercept + treatment only (2 params). No secular trend covariate \u2014 time is participant-anchored. Reference: Hussey &amp; Hughes (2007), <em>Contemp Clin Trials</em>.';
+  update();
+}
+
+// ── Sync + update ─────────────────────────────────────────────────────────────
+const pairs=[['K-s','K'],['nDE-s','nDE'],['nTX-s','nTX'],['nFU-s','nFU'],['n-s','n'],['delta-s','delta'],['sigma-s','sigma'],['icc-s','icc'],['alpha-s','alpha']];
+function getVal(id){return parseFloat(document.getElementById(id).value)||0;}
+
+function update(){
+  const K=getVal('K'),nDE=getVal('nDE'),nTX=getVal('nTX'),nFU=getVal('nFU');
+  const n=getVal('n'),delta=getVal('delta'),sigma=getVal('sigma');
+  const icc=getVal('icc'),alpha=getVal('alpha');
+  const inclFU=document.getElementById('inclFU').checked;
+  document.getElementById('fuBlock').className=inclFU?'':'disabled-block';
+  const d=sigma>0?(delta/sigma):0;
+  document.getElementById('derived-d').textContent=d.toFixed(2);
+  const pwr=computePower(K,n,delta,sigma,icc,alpha,nDE,nTX,nFU,inclFU);
+  const totalN=K*n;
+  const minn=minNfor80(K,delta,sigma,icc,alpha,nDE,nTX,nFU,inclFU);
+  const pwrEl=document.getElementById('s-power');
+  pwrEl.textContent=(pwr*100).toFixed(1)+'%';
+  pwrEl.className='num'+(pwr>=0.80?' good':pwr>=0.70?' warn':' bad');
+  document.getElementById('s-n').textContent=totalN;
+  document.getElementById('s-d').textContent=d.toFixed(2);
+  document.getElementById('s-minn').textContent=minn?minn:'>2000';
+  buildDesignTable(K,nDE,nTX,nFU,inclFU);
+  iccSet.forEach((ic,i)=>{chart.data.datasets[i].data=nVals.map(nv=>computePower(K,nv,delta,sigma,ic,alpha,nDE,nTX,nFU,inclFU));});
+  chart.data.datasets[iccSet.length].data=nVals.map(nv=>computePower(K,nv,delta,sigma,icc,alpha,nDE,nTX,nFU,inclFU));
+  chart.update('none');
+  buildChartLegend(icc);
+  document.getElementById('summary-text').textContent=buildSummary(K,n,delta,sigma,icc,alpha,nDE,nTX,nFU,inclFU,pwr,minn);
+}
+
+pairs.forEach(([sid,nid])=>{
+  const sl=document.getElementById(sid),nb=document.getElementById(nid);
+  sl.addEventListener('input',()=>{nb.value=sl.value;update();});
+  nb.addEventListener('input',()=>{const v=parseFloat(nb.value);if(!isNaN(v))sl.value=Math.min(Math.max(v,parseFloat(sl.min)),parseFloat(sl.max));update();});
+});
+document.getElementById('inclFU').addEventListener('change',update);
+setMode('cohort');
+</script>
+</body>
+</html>
